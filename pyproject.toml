@@ -12,7 +12,20 @@ license = { file = "LICENSE" }
 authors = [
   { name = "CoreBall contributors" }
 ]
-keywords = ["llm", "code-analysis", "semantic-context", "rag", "developer-tools", "cli"]
+keywords = [
+  "llm",
+  "code-analysis",
+  "code-understanding",
+  "semantic-context",
+  "context-compiler",
+  "rag",
+  "prompt-engineering",
+  "token-optimization",
+  "repository-analysis",
+  "developer-tools",
+  "ai",
+  "cli",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",

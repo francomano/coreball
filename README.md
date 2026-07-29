@@ -1,6 +1,15 @@
 # CoreBall
 
-CoreBall captures the core semantic context of a codebase for a specific LLM task.
+<p align="center">
+  <a href="https://github.com/coreball/coreball/actions"><img src="https://img.shields.io/github/actions/workflow/status/coreball/coreball/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI"></a>
+  <a href="https://pypi.org/project/coreball/"><img src="https://img.shields.io/pypi/v/coreball?logo=pypi&style=flat-square" alt="PyPI"></a>
+  <a href="https://pypi.org/project/coreball/"><img src="https://img.shields.io/pypi/pyversions/coreball?logo=python&style=flat-square" alt="Python versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
+  <a href="https://github.com/coreball/coreball/issues"><img src="https://img.shields.io/github/issues/coreball/coreball?style=flat-square" alt="Issues"></a>
+  <a href="https://github.com/coreball/coreball/stargazers"><img src="https://img.shields.io/github/stars/coreball/coreball?style=flat-square" alt="Stars"></a>
+</p>
+
+**CoreBall** captures the core semantic context of a codebase for a specific LLM task — no RAG, no embeddings, no bloat.
 
 Current LLM coding workflows often send entire files, arbitrary chunks, or embedding matches that are only loosely related to the user's question. That wastes tokens and can hide the important relationships the model needs: symbols, imports, call sites, entry points, and the parts of files that explain why they matter.
 
@@ -57,6 +66,16 @@ package = pack_repository(
 6. Pack excerpts and symbol metadata until the estimated token budget is reached.
 7. Render a structured Markdown or JSON context package.
 
+## Features
+
+- **Zero runtime dependencies** — pure Python standard library, nothing to install
+- **Deterministic** — same input, same output, every time. No embedding drift.
+- **Language-aware** — understands Python (AST) and JS/TS (regex), with symbol and import resolution
+- **Task-scoped** — scores and selects only what matters for your specific question
+- **Token-budget control** — fits exactly within your LLM's context window
+- **Dual output** — Markdown for human reading, JSON for programmatic use
+- **Explainable** — every file inclusion can be traced back to a task match or relationship
+
 ## Why existing approaches are insufficient
 
 - Whole-file prompting is simple but quickly exceeds context windows.
@@ -85,9 +104,17 @@ pytest
 python -m build
 ```
 
-## Review note
+## Contributing
 
-This initial repository was reviewed and fixed with OpenCode using GPT 5.5 before publication preparation.
+Contributions of all sizes are welcome! Here are some ways to help:
+
+- **Add a language parser** — Rust, Go, Java, or any other language
+- **Improve the relationship graph** — cross-file refs, call-chain expansion
+- **Write tests** — increase coverage and edge cases
+- **Documentation** — examples, guides, better explanations
+- **Bug reports & feature requests** — open an [issue](https://github.com/coreball/coreball/issues)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ## License
 
