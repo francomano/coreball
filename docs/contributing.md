@@ -5,7 +5,7 @@ Thank you for considering a contribution to CoreBall.
 ## Development setup
 
 ```bash
-git clone https://github.com/coreball/coreball.git
+git clone https://github.com/francomano/coreball.git
 cd coreball
 python -m pip install -e ".[dev]"
 ```

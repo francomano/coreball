@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "coreball"
 version = "0.1.0"
-description = "A semantic compiler that packs the smallest useful codebase context for an LLM task."
+description = "Semantic context compiler for LLM coding agents — packs the smallest useful codebase context for any task. Zero dependencies, deterministic, token-efficient."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -13,17 +13,27 @@ authors = [
   { name = "CoreBall contributors" }
 ]
 keywords = [
+  "context-engineering",
+  "token-optimization",
   "llm",
+  "ai-coding",
   "code-analysis",
   "code-understanding",
   "semantic-context",
   "context-compiler",
   "rag",
   "prompt-engineering",
-  "token-optimization",
+  "context-window",
   "repository-analysis",
   "developer-tools",
-  "ai",
+  "ai-agents",
+  "claude-code",
+  "cursor",
+  "codex",
+  "code-graph",
+  "knowledge-graph",
+  "tree-sitter",
+  "mcp",
   "cli",
 ]
 classifiers = [
@@ -34,8 +44,10 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Code Generators",
   "Topic :: Software Development :: Documentation",
   "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = []
 
@@ -48,10 +60,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/coreball/coreball"
-Documentation = "https://github.com/coreball/coreball/tree/main/docs"
-Issues = "https://github.com/coreball/coreball/issues"
-Changelog = "https://github.com/coreball/coreball/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/francomano/coreball"
+Documentation = "https://github.com/francomano/coreball/tree/main/docs"
+Issues = "https://github.com/francomano/coreball/issues"
+Changelog = "https://github.com/francomano/coreball/blob/main/CHANGELOG.md"
 
 [project.scripts]
 coreball = "coreball.cli:main"
