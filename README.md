@@ -63,6 +63,19 @@ package = pack_repository(
 print(f"Selected {len(package.items)} files, ~{package.estimated_tokens} tokens")
 ```
 
+**Live client demo — query this repository:**
+
+```bash
+# Python API demo on CoreBall itself (no mocks)
+python examples/query_repository.py
+# Single task
+python examples/query_repository.py --task "where is .gitignore handling implemented" --max-tokens 1200 --http
+# Any repo
+python examples/query_repository.py --repo /path/to/your/project --task "find the auth middleware"
+```
+
+See [`examples/query_repository.py`](examples/query_repository.py) — it runs `inspect_repository` + `pack_repository` on `.` with 3 demo tasks, prints scores/excerpts, and also demos the CLI (`coreball pack --format json`) and HTTP API (`POST /api/pack`). Documented in [`docs/examples.md`](docs/examples.md).
+
 ## Why CoreBall
 
 | | Whole-file prompting | RAG / embeddings | **CoreBall** |
