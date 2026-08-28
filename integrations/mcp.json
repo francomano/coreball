@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "coreball": {
+      "command": "python",
+      "args": ["-m", "coreball.mcp_server"],
+      "env": {},
+      "description": "CoreBall semantic context compiler — pack/inspéct/search_symbols/get_file_context"
+    }
+  }
+}

@@ -77,29 +77,34 @@ print(f"Selected {len(package.items)} files, ~{package.estimated_tokens} tokens"
 ## How It Works
 
 ```
-repository ──> scanner ──> parsers ──> semantic model ──> task scorer ──> graph expansion ──> context packager
+repository ──> scanner ──> parsers ──> semantic model ──> task scorer ──> graph expansion ──> context packager ──> MCP / HTTP API
                   │              │              │                │                │
                   │              │              │                │                └── relevance boost through
                   │              │              │                └── lexical + symbol + doc scoring
                   │              │              └── files, symbols, imports, call names
-                  │              └── Python AST, JS/TS regex, Markdown
-                  └── skip .git, node_modules, __pycache__, etc.
+                  │              └── Python AST, Go/Rust/PHP regex, JS/TS regex, Markdown
+                  └── skip .git, node_modules, __pycache__, + .gitignore
 ```
 
-1. **Scan** — discover source files, skip build/dependency directories
-2. **Parse** — extract symbols, imports, and calls (Python AST, JS/TS regex)
+1. **Scan** — discover source files, skip build/dependency dirs + `.gitignore`
+2. **Parse** — extract symbols/imports/calls (Python AST, Go/Rust/PHP + JS/TS regex)
 3. **Rank** — score every file against the task using lexical, symbol, and doc matches
 4. **Expand** — boost files that import or call top-ranked files
 5. **Pack** — fit the best excerpts within the token budget
-6. **Render** — output structured Markdown or JSON
+6. **Render** — output Markdown or JSON
+7. **Serve** — expose via MCP stdio or HTTP API for agents
 
 ## Features
 
 - **Zero dependencies** — pure Python standard library. Nothing to install.
 - **Deterministic** — same input always produces the same output
-- **Language-aware** — Python (AST parsing), JavaScript/TypeScript, Markdown, config files
+- **Language-aware** — Python (AST), Go, Rust, PHP, JavaScript/TypeScript, Markdown, config files
+- **.gitignore-aware** — respects `.gitignore` patterns out of the box (`--no-gitignore` to disable)
+- **MCP server** — stdio JSON-RPC 2.0 for Claude Code / Cursor / Codex / Windsurf
+- **HTTP API** — `coreball serve` — `http.server` stdlib only
+- **Plugin interface** — register custom analyzers without forking
 - **Task-scoped** — scores and selects only what matters for your question
-- **Token-budget control** — fits exactly within your LLM's context window
+- **Token-budget control** — clear error for `--max-tokens < 128` with suggestion
 - **Dual output** — Markdown for humans, JSON for pipelines
 - **Explainable** — every file includes a reason for inclusion
 - **Graph-based expansion** — imports and call relationships boost relevance
@@ -118,7 +123,7 @@ CoreBall occupies a unique niche: **pure Python, zero dependencies, deterministi
 
 | Tool | Language | Approach | Dependencies | MCP |
 |---|---|---|---|---|
-| **CoreBall** | Python | Semantic compiler | Zero | Planned |
+| **CoreBall** | Python | Semantic compiler | Zero | Yes |
 | codegraph | TypeScript/Rust | Knowledge graph | Heavy | Yes |
 | understand-Anything | TypeScript | Multi-agent graph | LLM + heavy | Yes |
 | graphsift | Python | BM25 + AST graph | Heavy | Yes |
@@ -126,13 +131,40 @@ CoreBall occupies a unique niche: **pure Python, zero dependencies, deterministi
 
 CoreBall trades runtime sophistication for simplicity and determinism. No databases, no embeddings, no LLM calls — just a clean semantic compiler you can audit, test, and extend.
 
+## MCP Server & HTTP API
+
+**MCP (Claude Code, Cursor, Codex):**
+
+```bash
+coreball mcp
+# or
+python -m coreball.mcp_server
+```
+
+Add to `.mcp.json`:
+
+```json
+{ "mcpServers": { "coreball": { "command": "coreball", "args": ["mcp"] } } }
+```
+
+Tools exposed: `pack`, `inspect`, `search_symbols`, `get_file_context`. See [integrations/README.md](integrations/README.md).
+
+**HTTP API:**
+
+```bash
+coreball serve --port 8765
+curl -X POST http://127.0.0.1:8765/api/pack -H 'Content-Type: application/json' \
+  -d '{"repository":".","task":"explain selector","max_tokens":800}'
+```
+
+Zero deps — `http.server` stdlib only. Health at `GET /health`.
+
 ## Limitations
 
 - Token counts are estimates, not tokenizer-specific
-- Python support is strongest; JS/TS uses conservative regex extraction
+- Python/Go/Rust/PHP support strongest; JS/TS uses conservative regex extraction
 - Relationship inference is intentionally shallow in v0.1
 - No language server or build system integration yet
-- No MCP server yet (planned)
 
 ## Development
 
@@ -142,7 +174,19 @@ ruff format --check .
 ruff check .
 mypy src/coreball
 pytest
+bash scripts/test.sh        # lint + types + tests + smoke (MCP, .gitignore, parsers)
+python scripts/smoke_test.py
 python -m build
+```
+
+Quick smoke:
+
+```bash
+coreball inspect . --format markdown
+coreball pack . --task "explain the selector" --max-tokens 2048
+printf '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n' | coreball mcp
+coreball serve --port 8765 &
+curl http://127.0.0.1:8765/health
 ```
 
 ## Contributing

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "coreball": {
+      "command": "coreball",
+      "args": ["mcp"],
+      "description": "CoreBall — compact task-scoped context for LLM agents"
+    }
+  }
+}

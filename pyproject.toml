@@ -67,6 +67,8 @@ Changelog = "https://github.com/francomano/coreball/blob/main/CHANGELOG.md"
 
 [project.scripts]
 coreball = "coreball.cli:main"
+coreball-mcp = "coreball.mcp_server:main"
+coreball-api = "coreball.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coreball"]

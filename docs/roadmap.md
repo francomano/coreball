@@ -5,13 +5,16 @@
 - Improve excerpt selection for large files.
 - Add fixture repositories for regression testing.
 - Publish benchmark methodology.
-- Harden CLI error messages.
+- ~~Harden CLI error messages~~ — done in 0.2.0 (issue #1).
 
-## v0.2 language depth
+## v0.2 language depth — shipped 2026-08-29
 
-- Add richer TypeScript parsing.
-- Add Rust and Go symbol extraction.
-- Add optional tree-sitter analyzers behind extras.
+- ~~Add Rust and Go symbol extraction~~ — done (regex, zero-deps, #13/#14) + PHP (#17).
+- ~~MCP server for Claude/Cursor/Codex~~ — done (#11) + HTTP API.
+- ~~Plugin interface for analyzers~~ — done (#6, `coreball.plugins`).
+- ~~`.gitignore` support~~ — done (#2).
+- Richer TypeScript parsing + Java/C# still open.
+- Optional tree-sitter analyzers behind extras (planned).
 
 ## v0.3 semantic graph
 

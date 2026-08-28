@@ -20,6 +20,22 @@ Tokenizer-specific counting would require model-specific dependencies. v0.1 uses
 
 The JavaScript/TypeScript parser is deliberately conservative. It extracts common imports, functions, classes and arrow-function exports without pretending to be a full compiler.
 
+## Regex Go/Rust/PHP parsing
+
+Same philosophy: zero deps, no tree-sitter yet. Go/Rust/PHP use multiline regex for `func`/`fn`/`function`, `struct`/`class`, `import`/`use`. Accurate enough for ranking and graph expansion; a future tree-sitter backend can be added behind the plugin interface without breaking the API.
+
+## Plugin interface — why minimal
+
+`coreball.plugins` is deliberately tiny: a `Callable[[Path, Path], SourceFile | None]` plus a dict registry. No entry-points auto-discovery, no class hierarchy. This avoids overengineering and keeps determinism. Built-ins stay the fallback; a plugin returning `None` delegates to the next one. See `src/coreball/plugins.py`.
+
+## .gitignore without dependencies
+
+No `pathspec`/`gitignore-parser` at runtime. CoreBall implements a small `fnmatch` + `PurePosixPath.match` based matcher covering `*`, `**`, `/`, `!` negation and nested `.gitignore`. Good enough for the 99% case; heavy repos can still use `--no-gitignore`.
+
+## MCP + HTTP API as adapters
+
+Both servers are thin adapters over `coreball.api` — no duplicated logic. MCP uses stdio JSON-RPC 2.0, HTTP uses `http.server`. No FastAPI/Uvicorn/Starlette to preserve the zero-dependency promise.
+
 ## Markdown and JSON output
 
 Markdown is immediately useful for LLM prompts. JSON is useful for automation and future integrations.

@@ -20,7 +20,10 @@ def select_context(model: RepositoryModel, *, task: str, max_tokens: int) -> Con
     """
 
     if max_tokens < 128:
-        raise ValueError("max_tokens must be at least 128")
+        raise ValueError(
+            f"Invalid --max-tokens value '{max_tokens}': must be at least 128. "
+            f'Try: coreball pack <repo> --task "<your task>" --max-tokens 512'
+        )
 
     terms = _task_terms(task)
     file_scores = {file.path: _score_file(file, terms) for file in model.files}
