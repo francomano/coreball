@@ -1,168 +1,371 @@
-"""Task-aware context selection."""
+"""Intelligent file selector – picks the most relevant files for a task.
+
+Uses TF-IDF scoring with path boosting, phrase matching, and
+multilingual stopword filtering to rank files by relevance to a
+natural-language query.
+"""
 
 from __future__ import annotations
 
 import math
 import re
+from dataclasses import dataclass, field
+from typing import Sequence
 
-from coreball.graph import related_files
-from coreball.models import ContextItem, ContextPackage, RepositoryModel, SourceFile
-from coreball.tokens import estimate_tokens
+from .models import ContextItem, ContextPackage, RepositoryModel, SourceFile, Symbol
+from .tokens import estimate_tokens
 
-_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9_\-]*")
+__all__ = ["select_context"]
+
+# ---------------------------------------------------------------------------
+# Stopwords (English + Italian + code noise)
+# ---------------------------------------------------------------------------
+
+_STOPWORDS: set[str] = {
+    # English
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "must", "can", "could", "of", "in", "to",
+    "for", "with", "on", "at", "from", "by", "about", "as", "into",
+    "through", "during", "before", "after", "above", "below", "between",
+    "out", "off", "over", "under", "again", "further", "then", "once",
+    "here", "there", "when", "where", "why", "how", "all", "each",
+    "every", "both", "few", "more", "most", "other", "some", "such",
+    "no", "nor", "not", "only", "own", "same", "so", "than", "too",
+    "very", "just", "because", "but", "and", "or", "if", "while",
+    "that", "this", "these", "those", "it", "its", "i", "me", "my",
+    "we", "our", "you", "your", "he", "him", "his", "she", "her",
+    "they", "them", "their", "what", "which", "who", "whom",
+    "up", "down", "also", "get", "got",
+    # Italian
+    "il", "lo", "la", "le", "li", "gli", "un", "uno", "una",
+    "di", "del", "dello", "della", "dei", "degli", "delle",
+    "da", "dal", "dallo", "dalla", "dai", "dagli", "dalle",
+    "su", "sul", "sullo", "sulla", "sui", "sugli", "sulle",
+    "con", "per", "tra", "fra", "che", "chi", "cui", "non",
+    "sono", "sia", "sei", "siamo", "siete", "era", "erano",
+    "ha", "ho", "hai", "hanno", "abbiamo", "avete",
+    "nel", "nello", "nella", "nei", "negli", "nelle",
+    "al", "allo", "alla", "ai", "agli", "alle",
+    "ma", "se", "come", "dove", "quando", "anche",
+    "ci", "ne", "mi", "ti", "si", "vi", "ce", "ve",
+    "questo", "questa", "questi", "queste", "quello", "quella",
+    "quelli", "quelle", "suo", "sua", "suoi", "sue",
+    "nostro", "nostra", "nostri", "nostre",
+    "loro", "tutto", "tutti", "tutta", "tutte",
+    "altro", "altra", "altri", "altre", "stesso", "stessa",
+    "ogni", "qualche", "alcuno", "nessuno", "molto", "poco",
+    # Code noise – too generic to be useful
+    "def", "class", "return", "import", "self", "none",
+    "true", "false", "null", "var", "let", "const", "new",
+}
+
+# ---------------------------------------------------------------------------
+# Tokenisation helpers
+# ---------------------------------------------------------------------------
+
+_TOKEN_RE = re.compile(r"[\w]+", re.UNICODE)
 
 
-def select_context(model: RepositoryModel, *, task: str, max_tokens: int) -> ContextPackage:
-    """Select a compact semantic context package for a task.
+def _tokenize(text: str) -> list[str]:
+    """Lowercase tokenize, splitting camelCase and snake_case."""
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    text = text.replace("_", " ")
+    return [t.lower() for t in _TOKEN_RE.findall(text) if len(t) >= 2]
 
-    The v0.1 algorithm combines lexical relevance, symbol matches and graph expansion.
-    It is deterministic, explainable and intentionally small enough to be audited.
+
+def _extract_query_terms(task: str) -> list[str]:
+    """Extract meaningful query terms (no stopwords, len >= 2)."""
+    tokens = _tokenize(task)
+    return [t for t in tokens if t not in _STOPWORDS]
+
+
+def _extract_query_phrases(task: str) -> list[tuple[str, ...]]:
+    """Extract consecutive non-stopword bigrams/trigrams from the query."""
+    tokens = _tokenize(task)
+    meaningful = [(i, t) for i, t in enumerate(tokens) if t not in _STOPWORDS]
+    phrases: list[tuple[str, ...]] = []
+    for k in range(len(meaningful) - 1):
+        idx_a, tok_a = meaningful[k]
+        idx_b, tok_b = meaningful[k + 1]
+        if idx_b - idx_a <= 2:
+            phrases.append((tok_a, tok_b))
+    for k in range(len(meaningful) - 2):
+        idx_a, tok_a = meaningful[k]
+        idx_c, tok_c = meaningful[k + 2]
+        if idx_c - idx_a <= 4:
+            _, tok_b = meaningful[k + 1]
+            phrases.append((tok_a, tok_b, tok_c))
+    return phrases
+
+
+# ---------------------------------------------------------------------------
+# IDF computation
+# ---------------------------------------------------------------------------
+
+def _compute_idf(
+    terms: list[str], files: Sequence[SourceFile],
+) -> dict[str, float]:
+    """Compute inverse document frequency for each query term."""
+    n = len(files)
+    if n == 0:
+        return {t: 1.0 for t in terms}
+
+    doc_freq: dict[str, int] = {t: 0 for t in terms}
+    for sf in files:
+        blob = _file_text(sf).lower()
+        for t in terms:
+            if t in blob:
+                doc_freq[t] += 1
+
+    idf: dict[str, float] = {}
+    for t in terms:
+        df = doc_freq[t]
+        idf[t] = math.log((n + 1) / (df + 1)) + 1.0
+    return idf
+
+
+# ---------------------------------------------------------------------------
+# Text helpers
+# ---------------------------------------------------------------------------
+
+def _file_text(sf: SourceFile) -> str:
+    """Build a searchable text blob from a SourceFile."""
+    parts: list[str] = [sf.path]
+    if sf.text:
+        parts.append(sf.text)
+    for sym in sf.symbols:
+        parts.append(sym.name)
+        if sym.signature:
+            parts.append(sym.signature)
+        if sym.docstring:
+            parts.append(sym.docstring)
+    return "\n".join(parts)
+
+
+def _path_text(sf: SourceFile) -> str:
+    """Return the file path with separators expanded for matching."""
+    return (
+        sf.path
+        .replace("/", " ").replace("\\", " ")
+        .replace("_", " ").replace("-", " ").replace(".", " ")
+        .lower()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _Score:
+    sf: SourceFile
+    tf_idf: float = 0.0
+    path_boost: float = 0.0
+    phrase: float = 0.0
+    symbol: float = 0.0
+    dependency: float = 0.0
+    matched_terms: set[str] = field(default_factory=set)
+
+    @property
+    def total(self) -> float:
+        return self.tf_idf + self.path_boost + self.phrase + self.symbol + self.dependency
+
+
+def _score_file(
+    sf: SourceFile,
+    terms: list[str],
+    idf: dict[str, float],
+    phrases: list[tuple[str, ...]],
+) -> _Score:
+    """Score a single file against the query."""
+    sc = _Score(sf=sf)
+    if not terms:
+        return sc
+
+    full_text = _file_text(sf).lower()
+    full_tokens = _tokenize(full_text)
+    path_lower = _path_text(sf)
+
+    # --- TF-IDF scoring ---
+    token_count = len(full_tokens) or 1
+    for term in terms:
+        tf_raw = full_tokens.count(term)
+        if tf_raw == 0:
+            tf_raw = full_text.count(term)
+        if tf_raw > 0:
+            sc.matched_terms.add(term)
+            tf = 1.0 + math.log(1 + tf_raw)
+            tf_norm = tf / (1.0 + math.log(1 + token_count))
+            sc.tf_idf += tf_norm * idf.get(term, 1.0)
+
+    # --- Coverage bonus ---
+    if len(terms) > 1:
+        coverage = len(sc.matched_terms) / len(terms)
+        sc.tf_idf *= (0.5 + 0.5 * coverage * coverage) * 2.0
+
+    # --- Path / filename boost ---
+    path_matches = 0
+    for term in terms:
+        if term in path_lower:
+            path_matches += 1
+            sc.path_boost += idf.get(term, 1.0) * 3.0
+    if path_matches >= 2:
+        sc.path_boost *= 1.5
+
+    # --- Phrase matching ---
+    searchable = full_text.replace("_", " ").replace("-", " ")
+    for phrase in phrases:
+        phrase_str = " ".join(phrase)
+        if phrase_str in searchable:
+            sc.phrase += len(phrase) * 4.0 * max(idf.get(p, 1.0) for p in phrase)
+        if phrase_str in path_lower:
+            sc.phrase += len(phrase) * 6.0 * max(idf.get(p, 1.0) for p in phrase)
+
+    # --- Symbol relevance ---
+    sym_names = [s.name.lower() for s in sf.symbols]
+    sym_text = " ".join(sym_names)
+    for term in terms:
+        if term in sym_text:
+            sc.symbol += idf.get(term, 1.0) * 2.0
+    for sn in sym_names:
+        if "handler" in sn or "lambda_handler" in sn:
+            for term in terms:
+                if "lambda" in term or "handler" in term:
+                    sc.symbol += 3.0
+                    break
+
+    # --- Dependency / import relevance ---
+    if sf.imports:
+        imports_lower = " ".join(sf.imports).lower()
+        for term in terms:
+            if term in imports_lower:
+                sc.dependency += idf.get(term, 1.0) * 0.5
+
+    return sc
+
+
+# ---------------------------------------------------------------------------
+# Excerpt builder
+# ---------------------------------------------------------------------------
+
+def _build_excerpt(sf: SourceFile, max_lines: int = 40) -> str:
+    """Return the first *max_lines* of the file text as an excerpt."""
+    if not sf.text:
+        return ""
+    lines = sf.text.split("\n")
+    return "\n".join(lines[:max_lines])
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def select_context(
+    model: RepositoryModel,
+    *,
+    task: str,
+    max_tokens: int = 4096,
+) -> ContextPackage:
+    """Select the most relevant files for *task* within a token budget.
+
+    Ranking uses TF-IDF with path boosting, phrase matching, and
+    coverage bonuses.  Stopwords are filtered to avoid noise.
     """
+    files = model.files
 
-    if max_tokens < 128:
-        raise ValueError(
-            f"Invalid --max-tokens value '{max_tokens}': must be at least 128. "
-            f'Try: coreball pack <repo> --task "<your task>" --max-tokens 512'
+    if not files:
+        return ContextPackage(
+            task=task,
+            max_tokens=max_tokens,
+            estimated_tokens=0,
+            summary="No files to select from.",
+            items=(),
+            omitted_files=(),
         )
 
-    terms = _task_terms(task)
-    file_scores = {file.path: _score_file(file, terms) for file in model.files}
-    graph = related_files(model)
-    for path, neighbours in graph.items():
-        neighbour_bonus = sum(file_scores.get(neighbour, 0.0) for neighbour in neighbours) * 0.18
-        file_scores[path] += neighbour_bonus
+    # --- Extract query terms and phrases ---
+    terms = _extract_query_terms(task)
+    phrases = _extract_query_phrases(task)
 
-    ranked_files = sorted(model.files, key=lambda file: (-file_scores[file.path], file.path))
-    reserved = estimate_tokens(_package_header(task, max_tokens, model))
-    budget = max_tokens - reserved
+    # If ALL terms got filtered as stopwords, fall back to raw tokens
+    if not terms:
+        terms = _tokenize(task)
+
+    # --- Compute IDF across the corpus ---
+    idf = _compute_idf(terms, files)
+
+    # --- Score every file ---
+    scored: list[_Score] = [_score_file(sf, terms, idf, phrases) for sf in files]
+
+    # --- Sort by total score descending ---
+    scored.sort(key=lambda s: s.total, reverse=True)
+
+    # --- Greedy knapsack: pack files within budget ---
     items: list[ContextItem] = []
     omitted: list[str] = []
-    used = reserved
+    total_tok = 0
 
-    for file in ranked_files:
-        score = file_scores[file.path]
-        if score <= 0 and items:
-            omitted.append(file.path)
+    for sc in scored:
+        sf = sc.sf
+        if sc.total <= 0:
+            omitted.append(sf.path)
             continue
-        item = _context_item(file, score, terms)
-        if item.estimated_tokens <= max(32, budget - (used - reserved)):
-            items.append(item)
-            used += item.estimated_tokens
-        else:
-            compact = _context_item(file, score, terms, compact=True)
-            if compact.estimated_tokens <= max(32, budget - (used - reserved)):
-                items.append(compact)
-                used += compact.estimated_tokens
-            else:
-                omitted.append(file.path)
 
-    if not items and ranked_files:
-        first = _context_item(
-            ranked_files[0], file_scores[ranked_files[0].path], terms, compact=True
+        excerpt = _build_excerpt(sf)
+        ftok = estimate_tokens(excerpt) if excerpt else estimate_tokens(sf.text or "")
+
+        if total_tok + ftok > max_tokens and items:
+            omitted.append(sf.path)
+            continue
+
+        # Build reason string
+        parts = [f"score={sc.total:.2f}"]
+        if sc.path_boost > 0:
+            parts.append(f"path_boost={sc.path_boost:.1f}")
+        if sc.phrase > 0:
+            parts.append(f"phrase={sc.phrase:.1f}")
+        if sc.matched_terms:
+            parts.append(f"terms={','.join(sorted(sc.matched_terms))}")
+        sym_names = [s.name for s in sf.symbols[:5]]
+        if sym_names:
+            parts.append(f"symbols: {', '.join(sym_names)}")
+        reason = "; ".join(parts)
+
+        item = ContextItem(
+            path=sf.path,
+            language=sf.language or "",
+            score=round(sc.total, 3),
+            reason=reason,
+            symbols=tuple(sf.symbols),
+            excerpt=excerpt,
+            estimated_tokens=ftok,
         )
-        items.append(first)
-        used += first.estimated_tokens
-        omitted = [file.path for file in ranked_files[1:]]
+        items.append(item)
+        total_tok += ftok
 
-    summary = _summary(model, items, omitted)
+        if total_tok >= max_tokens:
+            break
+
+    # Remaining scored > 0 that didn't fit
+    for sc in scored:
+        if sc.total > 0 and sc.sf.path not in {it.path for it in items} and sc.sf.path not in omitted:
+            omitted.append(sc.sf.path)
+
+    all_symbols = sum(len(sf.symbols) for sf in files)
+    sel_symbols = sum(len(it.symbols) for it in items)
+    summary = (
+        f"Selected {len(items)} of {len(files)} files and "
+        f"{sel_symbols} symbols from a repository containing "
+        f"{all_symbols} symbols. "
+        f"Omitted {len(omitted)} lower-priority files to respect the token budget."
+    )
+
     return ContextPackage(
         task=task,
         max_tokens=max_tokens,
-        estimated_tokens=min(used + estimate_tokens(summary), max_tokens),
+        estimated_tokens=total_tok,
         summary=summary,
         items=tuple(items),
         omitted_files=tuple(omitted),
-    )
-
-
-def _task_terms(task: str) -> set[str]:
-    return {term.lower().replace("-", "_") for term in _TERM_RE.findall(task) if len(term) > 2}
-
-
-def _score_file(file: SourceFile, terms: set[str]) -> float:
-    haystacks = [file.path.lower().replace("-", "_")]
-    haystacks.extend(symbol.name.lower() for symbol in file.symbols)
-    haystacks.extend(symbol.signature.lower() for symbol in file.symbols)
-    haystacks.extend((symbol.docstring or "").lower() for symbol in file.symbols)
-    haystacks.extend(imported.lower() for imported in file.imports)
-    text_lower = file.text[:12_000].lower().replace("-", "_")
-
-    score = 0.0
-    for term in terms:
-        if any(term in haystack for haystack in haystacks):
-            score += 6.0
-        score += min(4.0, text_lower.count(term) * 0.8)
-
-    if file.symbols:
-        score += math.log2(len(file.symbols) + 1)
-    if file.path in {"README.md", "pyproject.toml", "package.json"}:
-        score += 1.5
-    return score
-
-
-def _context_item(
-    file: SourceFile, score: float, terms: set[str], *, compact: bool = False
-) -> ContextItem:
-    symbols = file.symbols
-    excerpt = _excerpt(file, terms, compact=compact)
-    symbol_names = ", ".join(symbol.name for symbol in symbols[:8]) or "no symbols"
-    reason = (
-        f"score={score:.2f}; selected for symbols/imports/text relevant to task; "
-        f"symbols: {symbol_names}"
-    )
-    rendered = f"{file.path}\n{reason}\n{excerpt}"
-    return ContextItem(
-        path=file.path,
-        language=file.language,
-        score=round(score, 3),
-        reason=reason,
-        symbols=symbols[:12],
-        excerpt=excerpt,
-        estimated_tokens=estimate_tokens(rendered),
-    )
-
-
-def _excerpt(file: SourceFile, terms: set[str], *, compact: bool) -> str:
-    lines = file.text.splitlines()
-    if not lines:
-        return ""
-
-    selected: set[int] = set()
-    for symbol in file.symbols[:12]:
-        start = max(1, symbol.line_start - 1)
-        end = min(len(lines), symbol.line_end + 1)
-        selected.update(range(start, end + 1))
-
-    for index, line in enumerate(lines, start=1):
-        lower = line.lower().replace("-", "_")
-        if any(term in lower for term in terms):
-            selected.update(range(max(1, index - 2), min(len(lines), index + 2) + 1))
-
-    if not selected:
-        limit = 20 if compact else 80
-        return "\n".join(lines[:limit])
-
-    limit_lines = 35 if compact else 120
-    chunks: list[str] = []
-    last = 0
-    for line_no in sorted(selected)[:limit_lines]:
-        if last and line_no > last + 1:
-            chunks.append("...")
-        chunks.append(f"{line_no}: {lines[line_no - 1]}")
-        last = line_no
-    return "\n".join(chunks)
-
-
-def _package_header(task: str, max_tokens: int, model: RepositoryModel) -> str:
-    return (
-        f"CoreBall context package\nTask: {task}\nBudget: {max_tokens}\nFiles: {len(model.files)}\n"
-    )
-
-
-def _summary(model: RepositoryModel, items: list[ContextItem], omitted: list[str]) -> str:
-    selected_symbols = sum(len(item.symbols) for item in items)
-    return (
-        f"Selected {len(items)} of {len(model.files)} files and {selected_symbols} symbols "
-        f"from a repository containing {model.symbol_count} symbols. "
-        f"Omitted {len(omitted)} lower-priority files to respect the token budget."
     )

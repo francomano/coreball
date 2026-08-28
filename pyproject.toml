@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coreball"
-version = "0.2.1"
+version = "0.2.2"
 description = "Semantic context compiler for LLM coding agents — packs the smallest useful codebase context for any task. Zero dependencies, deterministic, token-efficient."
 readme = "README.md"
 requires-python = ">=3.11"

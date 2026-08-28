@@ -11,3 +11,4 @@ dist/
 .coverage
 .DS_Store
 coreball-context.json
+context.json
