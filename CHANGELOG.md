@@ -2,7 +2,14 @@
 
 All notable changes to CoreBall are documented in this file.
 
-## 0.2.0 - 2026-08-29
+## 0.2.1 - 2026-08-28
+
+### Changed
+
+- Repo cleanup: removed `docs/`, `.github/`, `sprint/` and extra `*.md` (kept only `README.md` and `CHANGELOG.md`).
+- Shortened `README.md` to a concise version with install, CLI / Python API / MCP / HTTP usage and `examples/query_repository.py` demo.
+
+## 0.2.0 - 2026-08-28
 
 ### Added
 

@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 from coreball.api import inspect_repository, pack_repository
 from coreball.renderers import render_inspection, render_package
 
-VERSION = "0.1.0"
+VERSION = "0.2.1"
 
 
 class _Handler(BaseHTTPRequestHandler):

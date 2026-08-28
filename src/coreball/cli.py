@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="coreball",
         description="Compile a repository into compact semantic context for an LLM task.",
     )
-    parser.add_argument("--version", action="version", version="coreball 0.1.0")
+    parser.add_argument("--version", action="version", version="coreball 0.2.1")
     sub = parser.add_subparsers(dest="command", required=True)
 
     inspect_cmd = sub.add_parser("inspect", help="Build and print the repository semantic index.")
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         run_server(host=args.host, port=args.port)
         return 0
     if args.command == "version":
-        print("coreball 0.1.0")
+        print("coreball 0.2.1")
         return 0
     try:
         if args.command == "inspect":

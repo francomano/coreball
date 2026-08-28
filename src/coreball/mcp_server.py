@@ -31,7 +31,7 @@ from typing import Any
 from coreball.api import inspect_repository, pack_repository
 from coreball.renderers import render_package
 
-SERVER_INFO = {"name": "coreball", "version": "0.1.0"}
+SERVER_INFO = {"name": "coreball", "version": "0.2.1"}
 PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
